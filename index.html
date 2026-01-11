@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<title>合言葉通話</title>
+</head>
+<body>
+
+<input id="room" placeholder="合言葉">
+<button onclick="start()">通話開始</button>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let pc, stream, room;
+
+async function start() {
+  room = roomInput.value;
+  stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+
+  pc = new RTCPeerConnection();
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  pc.ontrack = e => {
+    const a = document.createElement("audio");
+    a.srcObject = e.streams[0];
+    a.autoplay = true;
+  };
+
+  pc.onicecandidate = e => {
+    if (e.candidate)
+      socket.emit("signal", { room, signal: e.candidate });
+  };
+
+  socket.emit("join", room);
+}
+
+socket.on("ready", async () => {
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit("signal", { room, signal: offer });
+});
+
+socket.on("signal", async signal => {
+  if (signal.type === "offer") {
+    await pc.setRemoteDescription(signal);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit("signal", { room, signal: answer });
+  } else if (signal.type === "answer") {
+    await pc.setRemoteDescription(signal);
+  } else {
+    await pc.addIceCandidate(signal);
+  }
+});
+</script>
+
+</body>
+</html>
